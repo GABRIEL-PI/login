@@ -49,7 +49,8 @@ class AdManagerService:
             page = await browser.new_page()
             result = await self._login_with_retry(page, network, "demo")
 
-            if not headless and result.get("success"):
+            if result.get("success"):
+                # Dá tempo do Chromium persistir cookies/sessão no disco antes de fechar
                 await page.wait_for_timeout(3000)
 
             await browser.close()

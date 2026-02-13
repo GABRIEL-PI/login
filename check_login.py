@@ -57,15 +57,20 @@ async def check_logged_in(network: str, headless: bool = True) -> bool:
     page = await browser.new_page()
 
     try:
-        await page.goto(url, timeout=60000)
-        # Deixa a página estabilizar (redirects, etc.)
-        await page.wait_for_timeout(3000)
+        await page.goto(url, timeout=60000, wait_until="domcontentloaded")
+        # Espera redirects terminarem (Google pode checar sessão)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=15000)
+        except Exception:
+            pass
+        await page.wait_for_timeout(5000)
         current_url = page.url
         await browser.close()
         await pw.stop()
 
         # Se foi para accounts.google.com = não está logado
         if "accounts.google.com" in current_url:
+            print(f"   (URL atual: {current_url[:80]}...)", file=sys.stderr)
             return False
         # Se está no admanager com o network na URL = logado
         if "admanager.google.com" in current_url and network in current_url:
@@ -73,6 +78,7 @@ async def check_logged_in(network: str, headless: bool = True) -> bool:
         # admanager pode redirecionar para outra URL ainda dentro do produto
         if "admanager.google.com" in current_url:
             return True
+        print(f"   (URL inesperada: {current_url[:80]}...)", file=sys.stderr)
         return False
     except Exception as e:
         print(f"Erro ao verificar: {e}", file=sys.stderr)
