@@ -215,6 +215,48 @@ class AdManagerService:
         await page.screenshot(path=data_dir / "verification_page.png")
         logger.info("_verify_verification_step | screenshot saved to verification_page.png")
 
+        # 0. Detecta número de verificação e loga no console
+        try:
+            # Procurar por elementos que contenham números grandes (2 dígitos)
+            number_element = await page.query_selector("div[data-challengetype='12'], div[jsname], div[class*='number'], div[class*='challenge']")
+            if number_element:
+                text = await number_element.inner_text()
+                # Procurar por número de 2 dígitos
+                import re
+                numbers = re.findall(r'\b\d{2}\b', text)
+                if numbers:
+                    verification_number = numbers[0]
+                    print("\n" + "🔢" * 35)
+                    print(f"   NÚMERO DE VERIFICAÇÃO DETECTADO: {verification_number}")
+                    print("🔢" * 35 + "\n")
+                    logger.info("VERIFICATION_NUMBER | number=%s", verification_number)
+                    
+                    # Salvar o número em arquivo também
+                    with open(data_dir / "verification_number.txt", "w") as f:
+                        f.write(f"Número de verificação: {verification_number}\n")
+                        f.write(f"Timestamp: {__import__('datetime').datetime.now()}\n")
+        except Exception as e:
+            logger.warning("_verify_verification_step | failed to detect number: %s", e)
+        
+        # Tentar detectar número de forma mais agressiva procurando no HTML
+        try:
+            content = await page.content()
+            # Procurar por números de 2 dígitos no HTML que não sejam códigos comuns
+            import re
+            # Procurar por padrões como "31" ou números grandes isolados
+            html_numbers = re.findall(r'>\s*(\d{2})\s*<', content)
+            if html_numbers:
+                # Filtrar números comuns (00, 01, etc.) e pegar o primeiro "incomum"
+                for num in html_numbers:
+                    if int(num) > 10:  # Números > 10 são mais prováveis de serem o código
+                        print("\n" + "=" * 70)
+                        print(f"🔢 NÚMERO DE VERIFICAÇÃO (HTML): {num}")
+                        print("=" * 70 + "\n")
+                        logger.info("VERIFICATION_NUMBER_HTML | number=%s", num)
+                        break
+        except Exception as e:
+            logger.warning("_verify_verification_step | failed to detect number from HTML: %s", e)
+
         # 0. Detecta "Use your passkey" na tela de 2-Step Verification e clica
         try:
             content = await page.content()
