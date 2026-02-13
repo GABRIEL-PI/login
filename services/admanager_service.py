@@ -201,6 +201,20 @@ class AdManagerService:
                     await page.wait_for_timeout(VERIFICATION_WAIT_SECONDS * 1000)
                     await page.screenshot(path=data_dir / "verify_passkey_after.png")
                     logger.info("Passkey wait completed")
+                    
+                    # Após aprovar no celular, clicar no botão "Continue" se aparecer
+                    try:
+                        logger.info("_verify_verification_step | looking for Continue button")
+                        continue_button = page.get_by_role("button", name="Continue")
+                        if await continue_button.count() == 0:
+                            continue_button = page.get_by_role("button", name="Continuar")
+                        if await continue_button.count() > 0:
+                            logger.info("_verify_verification_step | clicking Continue button")
+                            await continue_button.first.click()
+                            await page.wait_for_timeout(3000)
+                            logger.info("_verify_verification_step | Continue clicked")
+                    except Exception as e:
+                        logger.warning("_verify_verification_step | Continue button not found or error: %s", e)
         except Exception as e:
             logger.error(f"Error during passkey step: {str(e)}")
 
