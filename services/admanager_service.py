@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Tempo de espera para verificação no celular (segundos) - via env VERIFICATION_WAIT_SECONDS
-VERIFICATION_WAIT_SECONDS = int(os.getenv("VERIFICATION_WAIT_SECONDS", "180"))
+VERIFICATION_WAIT_SECONDS = int(os.getenv("VERIFICATION_WAIT_SECONDS", "60"))
 
 
 class AdManagerService:
