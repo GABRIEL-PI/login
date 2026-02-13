@@ -12,18 +12,21 @@ Requer: GOOGLE_EMAIL e GOOGLE_PASSWORD no .env
 """
 import asyncio
 import argparse
+import logging
 import sys
 from pathlib import Path
-import os
+
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from dotenv import load_dotenv
 load_dotenv(override=True)
-print(os.getenv("VERIFICATION_WAIT_SECONDS"))
+
 from config.settings import Config
 from services.admanager_service import AdManagerService
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+logger = logging.getLogger("demo_login")
 
 MOCK_NETWORK = "23128820367"
 
@@ -34,6 +37,7 @@ async def main():
     parser.add_argument("--network", type=str, default=MOCK_NETWORK, help="Network ID do Ad Manager")
     args = parser.parse_args()
 
+    logger.info("main | start | network=%s visible=%s", args.network, args.visible)
     print("=" * 50)
     print("DEMO: Login no Google Ad Manager")
     print("=" * 50)
@@ -44,11 +48,14 @@ async def main():
     print("=" * 50)
 
     if not Config.GOOGLE_EMAIL or not Config.GOOGLE_PASSWORD:
+        logger.error("main | GOOGLE_EMAIL or GOOGLE_PASSWORD not set")
         print("\nERRO: Configure GOOGLE_EMAIL e GOOGLE_PASSWORD no .env")
         sys.exit(1)
 
     service = AdManagerService()
+    logger.info("main | calling login_only")
     result = await service.login_only(args.network, headless=not args.visible)
+    logger.info("main | login_only returned success=%s message=%s", result.get("success"), result.get("message"))
 
     print("\nResultado do login:")
     print(f"  Success: {result.get('success')}")

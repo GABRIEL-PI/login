@@ -12,7 +12,7 @@ from playwright.async_api import Page, async_playwright
 
 from config.settings import Config
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 logger = logging.getLogger(__name__)
 
 # Tempo de espera para verificação no celular (segundos) - via env VERIFICATION_WAIT_SECONDS
@@ -27,10 +27,12 @@ class AdManagerService:
 
     async def login_only(self, network: str, headless: bool = True) -> Dict[str, Any]:
         """Apenas realiza o login no Ad Manager."""
+        logger.info("login_only | start | network=%s headless=%s", network, headless)
         try:
             pw = await async_playwright().start()
             user_data_dir = Path.cwd() / "data" / "demo-user-data"
             user_data_dir.mkdir(exist_ok=True, parents=True)
+            logger.info("login_only | user_data_dir=%s (exists=%s)", user_data_dir.resolve(), user_data_dir.exists())
 
             browser = await pw.chromium.launch_persistent_context(
                 str(user_data_dir),
@@ -47,14 +49,20 @@ class AdManagerService:
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
             )
             page = await browser.new_page()
+            logger.info("login_only | browser launched, page created")
             result = await self._login_with_retry(page, network, "demo")
+            logger.info("login_only | _login_with_retry result: success=%s message=%s", result.get("success"), result.get("message"))
 
             if result.get("success"):
-                # Dá tempo do Chromium persistir cookies/sessão no disco antes de fechar
-                await page.wait_for_timeout(3000)
+                logger.info("login_only | login success, waiting 8s for Chromium to persist session to disk...")
+                await page.wait_for_timeout(8000)
+                logger.info("login_only | wait done, closing browser")
+            else:
+                logger.info("login_only | login failed, closing browser")
 
             await browser.close()
             await pw.stop()
+            logger.info("login_only | browser and playwright stopped, returning")
             return result
         except Exception as e:
             logger.error(f"Demo login error: {str(e)}")
@@ -65,14 +73,19 @@ class AdManagerService:
             }
 
     async def _login_with_retry(self, page: Page, network: str, task_id: str) -> Dict[str, Any]:
+        logger.info("_login_with_retry | start | max_retries=%s", self.max_retries)
         for attempt in range(self.max_retries):
+            logger.info("_login_with_retry | attempt %s/%s", attempt + 1, self.max_retries)
             result = await self._login(page, network, task_id)
             if result["success"]:
+                logger.info("_login_with_retry | success on attempt %s", attempt + 1)
                 return result
-            logger.error(f"Login attempt {attempt + 1} failed: {result['message']}")
+            logger.error("_login_with_retry | attempt %s failed: %s", attempt + 1, result["message"])
             if attempt < self.max_retries - 1:
+                logger.info("_login_with_retry | waiting %ss before retry", self.retry_delay)
                 await page.wait_for_timeout(self.retry_delay * 1000)
 
+        logger.error("_login_with_retry | all attempts exhausted")
         return {
             "data": None,
             "success": False,
@@ -80,37 +93,60 @@ class AdManagerService:
         }
 
     async def _login(self, page: Page, network: str, task_id: str) -> Dict[str, Any]:
+        url = f"https://admanager.google.com/{network}"
+        logger.info("_login | goto %s", url)
         try:
-            await page.goto(f"https://admanager.google.com/{network}", timeout=60000)
+            await page.goto(url, timeout=60000)
+            logger.info("_login | after goto url=%s", page.url)
 
             if "accounts.google.com" in page.url:
+                logger.info("_login | redirect to accounts.google.com, doing email/password")
                 try:
+                    logger.info("_login | filling email")
                     await page.wait_for_selector("#identifierId", state="visible", timeout=30000)
                     await page.fill("#identifierId", self.config.GOOGLE_EMAIL)
                     await page.click("#identifierNext")
+                    logger.info("_login | email submitted")
                 except Exception as e:
+                    logger.error("_login | email step failed: %s", e)
                     return {"data": None, "success": False, "message": f"Failed at email step: {str(e)}"}
 
                 try:
+                    logger.info("_login | filling password")
                     await page.wait_for_selector('input[name="Passwd"]', timeout=30000)
                     await page.fill('input[name="Passwd"]', self.config.GOOGLE_PASSWORD)
                     await page.click("#passwordNext")
+                    logger.info("_login | password submitted")
                 except Exception as e:
+                    logger.error("_login | password step failed: %s", e)
                     return {"data": None, "success": False, "message": f"Failed at password step: {str(e)}"}
 
+                logger.info("_login | waiting 10s after password, then verification step")
                 await page.wait_for_timeout(10000)
 
                 verification_result = await self._verify_verification_step(page, network)
+                logger.info("_login | verification result: success=%s", verification_result.get("success"))
                 if not verification_result["success"]:
                     return verification_result
 
             current_url = page.url
+            logger.info("_login | current_url=%s", current_url)
             if network not in current_url:
+                logger.error("_login | network %s not in url", network)
                 return {
                     "data": None,
                     "success": False,
                     "message": f"Login verification failed. Expected network '{network}' in URL, got: {current_url}",
                 }
+
+            logger.info("_login | on admanager with network, waiting for networkidle + 3s to persist session")
+            try:
+                await page.wait_for_load_state("networkidle", timeout=15000)
+                logger.info("_login | networkidle reached")
+            except Exception as e:
+                logger.warning("_login | networkidle timeout or error: %s", e)
+            await page.wait_for_timeout(3000)
+            logger.info("_login | returning success")
 
             return {"data": None, "success": True, "message": "Login successful"}
 
@@ -126,6 +162,7 @@ class AdManagerService:
             }
 
     async def _verify_verification_step(self, page: Page, network: str) -> Dict[str, Any]:
+        logger.info("_verify_verification_step | start | url=%s", page.url)
         data_dir = Path.cwd() / "data"
         data_dir.mkdir(exist_ok=True, parents=True)
 
@@ -134,6 +171,7 @@ class AdManagerService:
             content = await page.content()
             passkey_keywords = ["Use your passkey", "Usar sua chave de acesso", "passkey", "chave de acesso"]
             if any(kw.lower() in content.lower() for kw in passkey_keywords):
+                logger.info("_verify_verification_step | passkey keywords found, clicking")
                 passkey_selector = page.get_by_text("Use your passkey", exact=True)
                 if await passkey_selector.count() == 0:
                     passkey_selector = page.get_by_text("Usar sua chave de acesso", exact=True)
@@ -215,4 +253,5 @@ class AdManagerService:
         except Exception:
             pass
 
+        logger.info("_verify_verification_step | done, returning passed")
         return {"data": None, "success": True, "message": "Verification step passed"}
