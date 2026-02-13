@@ -1,3 +1,7 @@
+# Container sobe e fica rodando; você executa na mão:
+#   Login:      docker-compose exec demo-login python demo_login.py --network ${ADMANAGER_NETWORK:-23128820367}
+#   Ver logado: docker-compose exec demo-login python check_login.py
+
 services:
   demo-login:
     build: .
@@ -9,4 +13,4 @@ services:
       - ADMANAGER_NETWORK=${ADMANAGER_NETWORK:-23128820367}
     volumes:
       - ./data:/app/data
-    command: python demo_login.py --network ${ADMANAGER_NETWORK:-23128820367}
+    command: sleep infinity
