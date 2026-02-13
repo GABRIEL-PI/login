@@ -129,14 +129,27 @@ class AdManagerService:
                 if not verification_result["success"]:
                     return verification_result
 
+                # Após passkey ainda estamos em accounts.google.com; esperar redirect para o Ad Manager
+                logger.info("_login | waiting for redirect to admanager.google.com (timeout 45s)")
+                try:
+                    await page.wait_for_url("**admanager.google.com**", timeout=45000)
+                    logger.info("_login | redirect to admanager done, url=%s", page.url)
+                except Exception as e:
+                    logger.error("_login | redirect to admanager failed: %s | current url=%s", e, page.url)
+                    return {
+                        "data": None,
+                        "success": False,
+                        "message": f"Did not redirect to Ad Manager after verification: {page.url}",
+                    }
+
             current_url = page.url
             logger.info("_login | current_url=%s", current_url)
-            if network not in current_url:
-                logger.error("_login | network %s not in url", network)
+            if "admanager.google.com" not in current_url or network not in current_url:
+                logger.error("_login | not on admanager or network missing in url")
                 return {
                     "data": None,
                     "success": False,
-                    "message": f"Login verification failed. Expected network '{network}' in URL, got: {current_url}",
+                    "message": f"Login verification failed. Expected admanager with network '{network}', got: {current_url}",
                 }
 
             logger.info("_login | on admanager with network, waiting for networkidle + 3s to persist session")
