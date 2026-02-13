@@ -56,6 +56,38 @@ class AdManagerService:
             if result.get("success"):
                 logger.info("login_only | login success, waiting 8s for Chromium to persist session to disk...")
                 await page.wait_for_timeout(8000)
+                
+                # Exportar cookies após login bem-sucedido (backup automático)
+                try:
+                    import json
+                    from datetime import datetime
+                    cookies = await browser.cookies()
+                    google_cookies = [c for c in cookies if "google.com" in c.get("domain", "") or "admanager" in c.get("domain", "")]
+                    
+                    cookies_file = Path.cwd() / "data" / "cookies_latest.json"
+                    export_cookies = []
+                    for cookie in google_cookies:
+                        export_cookie = {
+                            "domain": cookie["domain"],
+                            "expirationDate": cookie.get("expires", -1),
+                            "hostOnly": not cookie["domain"].startswith("."),
+                            "httpOnly": cookie.get("httpOnly", False),
+                            "name": cookie["name"],
+                            "path": cookie["path"],
+                            "sameSite": cookie.get("sameSite", "unspecified").lower(),
+                            "secure": cookie.get("secure", False),
+                            "session": cookie.get("expires", -1) == -1,
+                            "storeId": "0",
+                            "value": cookie["value"],
+                        }
+                        export_cookies.append(export_cookie)
+                    
+                    with open(cookies_file, "w") as f:
+                        json.dump(export_cookies, f, indent=2)
+                    logger.info("login_only | %d cookies exported to %s", len(export_cookies), cookies_file)
+                except Exception as e:
+                    logger.warning("login_only | failed to export cookies: %s", e)
+                
                 logger.info("login_only | wait done, closing browser")
             else:
                 logger.info("login_only | login failed, closing browser")
@@ -216,11 +248,22 @@ class AdManagerService:
                     print("=" * 70 + "\n")
                     logger.info("PASSKEY_STEP | clicking Use your passkey | waiting=%ds", VERIFICATION_WAIT_SECONDS)
                     await passkey_selector.first.click()
-                    await page.wait_for_timeout(VERIFICATION_WAIT_SECONDS * 1000)
+                    
+                    # Esperar a página mudar (você aprovar no celular) OU timeout
+                    logger.info("_verify_verification_step | waiting for passkey approval (page change or Continue button)")
+                    try:
+                        # Espera aparecer o botão Continue (sinal de que você aprovou) ou mudar de página
+                        await page.wait_for_selector("button:has-text('Continue'), button:has-text('Continuar')", 
+                                                     state="visible", 
+                                                     timeout=VERIFICATION_WAIT_SECONDS * 1000)
+                        logger.info("_verify_verification_step | Continue button appeared (passkey approved)")
+                    except Exception:
+                        logger.warning("_verify_verification_step | timeout waiting for Continue button, checking page state")
+                    
                     await page.screenshot(path=data_dir / "verify_passkey_after.png")
                     logger.info("Passkey wait completed")
                     
-                    # Após aprovar no celular, clicar no botão "Continue" se aparecer
+                    # Agora sim, clicar no botão "Continue" se aparecer
                     try:
                         logger.info("_verify_verification_step | looking for Continue button")
                         continue_button = page.get_by_role("button", name="Continue")
@@ -231,8 +274,10 @@ class AdManagerService:
                             await continue_button.first.click()
                             await page.wait_for_timeout(3000)
                             logger.info("_verify_verification_step | Continue clicked")
+                        else:
+                            logger.warning("_verify_verification_step | Continue button not found after wait")
                     except Exception as e:
-                        logger.warning("_verify_verification_step | Continue button not found or error: %s", e)
+                        logger.warning("_verify_verification_step | Continue button error: %s", e)
             else:
                 logger.warning("_verify_verification_step | passkey selector count is 0, trying alternative methods")
                 # Tentar clicar em qualquer botão/link que contenha "passkey"
