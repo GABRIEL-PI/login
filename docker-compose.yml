@@ -1,0 +1,12 @@
+services:
+  demo-login:
+    build: .
+    env_file:
+      - .env
+    environment:
+      - GOOGLE_EMAIL=${GOOGLE_EMAIL}
+      - GOOGLE_PASSWORD=${GOOGLE_PASSWORD}
+      - ADMANAGER_NETWORK=${ADMANAGER_NETWORK:-23128820367}
+    volumes:
+      - ./data:/app/data
+    command: python demo_login.py --network ${ADMANAGER_NETWORK:-23128820367}
