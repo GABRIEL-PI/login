@@ -179,15 +179,33 @@ class AdManagerService:
         data_dir = Path.cwd() / "data"
         data_dir.mkdir(exist_ok=True, parents=True)
 
+        # Screenshot da página de verificação para debug
+        await page.screenshot(path=data_dir / "verification_page.png")
+        logger.info("_verify_verification_step | screenshot saved to verification_page.png")
+
         # 0. Detecta "Use your passkey" na tela de 2-Step Verification e clica
         try:
             content = await page.content()
+            # Salva o HTML para debug
+            with open(data_dir / "verification_page.html", "w", encoding="utf-8") as f:
+                f.write(content)
+            logger.info("_verify_verification_step | HTML saved, checking for passkey keywords")
+            
             passkey_keywords = ["Use your passkey", "Usar sua chave de acesso", "passkey", "chave de acesso"]
+            found_keywords = [kw for kw in passkey_keywords if kw.lower() in content.lower()]
+            logger.info("_verify_verification_step | found keywords: %s", found_keywords)
+            
             if any(kw.lower() in content.lower() for kw in passkey_keywords):
                 logger.info("_verify_verification_step | passkey keywords found, clicking")
                 passkey_selector = page.get_by_text("Use your passkey", exact=True)
-                if await passkey_selector.count() == 0:
+                count_en = await passkey_selector.count()
+                logger.info("_verify_verification_step | 'Use your passkey' count: %d", count_en)
+                
+                if count_en == 0:
                     passkey_selector = page.get_by_text("Usar sua chave de acesso", exact=True)
+                    count_pt = await passkey_selector.count()
+                    logger.info("_verify_verification_step | 'Usar sua chave de acesso' count: %d", count_pt)
+                
                 if await passkey_selector.count() > 0:
                     await page.screenshot(path=data_dir / "verify_passkey_before.png")
                     print("\n" + "=" * 70)
@@ -215,6 +233,35 @@ class AdManagerService:
                             logger.info("_verify_verification_step | Continue clicked")
                     except Exception as e:
                         logger.warning("_verify_verification_step | Continue button not found or error: %s", e)
+            else:
+                logger.warning("_verify_verification_step | passkey selector count is 0, trying alternative methods")
+                # Tentar clicar em qualquer botão/link que contenha "passkey"
+                try:
+                    all_buttons = await page.query_selector_all("button, a, div[role='button']")
+                    logger.info("_verify_verification_step | found %d clickable elements", len(all_buttons))
+                    for btn in all_buttons:
+                        text = await btn.inner_text()
+                        if "passkey" in text.lower() or "chave de acesso" in text.lower():
+                            logger.info("_verify_verification_step | found passkey element with text: %s", text)
+                            await btn.click()
+                            await page.wait_for_timeout(VERIFICATION_WAIT_SECONDS * 1000)
+                            await page.screenshot(path=data_dir / "verify_passkey_after.png")
+                            logger.info("Passkey clicked via alternative method")
+                            
+                            # Tentar clicar Continue
+                            try:
+                                continue_button = page.get_by_role("button", name="Continue")
+                                if await continue_button.count() == 0:
+                                    continue_button = page.get_by_role("button", name="Continuar")
+                                if await continue_button.count() > 0:
+                                    logger.info("_verify_verification_step | clicking Continue button")
+                                    await continue_button.first.click()
+                                    await page.wait_for_timeout(3000)
+                            except Exception as e2:
+                                logger.warning("_verify_verification_step | Continue button error: %s", e2)
+                            break
+                except Exception as e:
+                    logger.error("_verify_verification_step | alternative passkey click failed: %s", e)
         except Exception as e:
             logger.error(f"Error during passkey step: {str(e)}")
 
