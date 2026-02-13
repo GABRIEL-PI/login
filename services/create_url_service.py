@@ -93,6 +93,16 @@ class CreateURLService:
 
             current_url = page.url
             logger.info("_create_url_safe | current_url=%s", current_url)
+            
+            # Check if redirected to login page (session expired)
+            if "accounts.google.com" in current_url:
+                logger.error("_create_url_safe | redirected to login page, session expired")
+                return {
+                    "data": None,
+                    "success": False,
+                    "message": "Session expired. Please run 'python demo_login.py' or 'python import_cookies.py' first.",
+                }
+            
             if network not in current_url:
                 return {
                     "data": None,
