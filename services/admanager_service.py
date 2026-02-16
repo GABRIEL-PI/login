@@ -269,13 +269,53 @@ class AdManagerService:
         if has_number_challenge:
             logger.info("_verify_verification_step | number challenge detected, using extended wait time: %ds", wait_time)
 
-        # 0. Detecta "Use your passkey" na tela de 2-Step Verification e clica
+        # 0. Detectar e clicar em "Use another phone or computer" se disponível
         try:
             content = await page.content()
             # Salva o HTML para debug
             with open(data_dir / "verification_page.html", "w", encoding="utf-8") as f:
                 f.write(content)
-            logger.info("_verify_verification_step | HTML saved, checking for passkey keywords")
+            logger.info("_verify_verification_step | HTML saved, checking for verification options")
+            
+            # Procurar por "Use another phone or computer"
+            another_device_keywords = [
+                "Use another phone or computer",
+                "Usar outro telefone ou computador",
+                "another phone",
+                "outro telefone"
+            ]
+            
+            if any(kw.lower() in content.lower() for kw in another_device_keywords):
+                logger.info("_verify_verification_step | 'Use another phone/computer' option found, trying to click")
+                try:
+                    # Tentar clicar na opção
+                    another_device_button = page.get_by_text("Use another phone or computer")
+                    if await another_device_button.count() == 0:
+                        another_device_button = page.get_by_text("Usar outro telefone ou computador")
+                    
+                    if await another_device_button.count() > 0:
+                        await another_device_button.first.click()
+                        await page.wait_for_timeout(3000)
+                        logger.info("_verify_verification_step | clicked 'Use another phone/computer'")
+                        
+                        print("\n" + "=" * 70)
+                        print("2-STEP VERIFICATION - Use another phone or computer")
+                        print("=" * 70)
+                        print(">>> APROVE NO SEU OUTRO DISPOSITIVO! <<<")
+                        print("Aguardando 120s para você aprovar em outro dispositivo...")
+                        print("=" * 70 + "\n")
+                        
+                        # Esperar aprovação (até 120s)
+                        await page.wait_for_timeout(120000)
+                        logger.info("_verify_verification_step | wait completed for another device approval")
+                        
+                        # Verificar se saiu da página de verificação
+                        current_url = page.url
+                        if "challenge" not in current_url:
+                            logger.info("_verify_verification_step | successfully left challenge page")
+                            return {"data": None, "success": True, "message": "Verification step passed"}
+                except Exception as e:
+                    logger.warning("_verify_verification_step | failed to click another device option: %s", e)
             
             passkey_keywords = ["Use your passkey", "Usar sua chave de acesso", "passkey", "chave de acesso"]
             found_keywords = [kw for kw in passkey_keywords if kw.lower() in content.lower()]
