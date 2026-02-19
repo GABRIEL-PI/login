@@ -376,10 +376,15 @@ class CreateURLService:
     async def _set_inventory_type(self, page: Page, inventory_type: str) -> None:
         """Set the inventory type dropdown (Tipo de inventário)"""
         try:
-            # Valid options: "Display" or "Vídeo in-stream"
-            valid_types = ["Display", "Vídeo in-stream"]
+            # "Display" e "Visualização" são o mesmo tipo no GAM (nome pode variar por conta)
+            # Ambos são aceitos como entrada; tentamos os dois no dropdown
+            display_aliases = ["Display", "Visualização"]
+            valid_types = display_aliases + ["Vídeo in-stream"]
             if inventory_type not in valid_types:
                 raise ValueError(f"Invalid inventory type. Must be one of: {valid_types}")
+
+            # Se o usuário passou um alias de Display, vamos tentar ambos os nomes
+            candidates = display_aliases if inventory_type in display_aliases else [inventory_type]
 
             # Find and click the inventory type dropdown
             max_attempts = 3
@@ -421,49 +426,53 @@ class CreateURLService:
                                 raise Exception("Could not find dropdown button")
                             await page.wait_for_timeout(2000)
                             logger.info("_set_inventory_type | dropdown clicked via strategy 3 (javascript)")
-                    
+
                     # Aguardar o dropdown abrir
                     await page.wait_for_timeout(1500)
-                    
-                    # Select the option from dropdown
+
+                    # Select the option from dropdown — tenta cada candidato (Display / Visualização)
                     option_selected = False
-                    
-                    # Strategy 1: Procurar por role option
-                    try:
-                        option = page.get_by_role("option", name=inventory_type)
-                        await option.wait_for(state="visible", timeout=5000)
-                        await option.click()
-                        option_selected = True
-                        logger.info("_set_inventory_type | option selected via strategy 1 (role)")
-                    except Exception:
-                        pass
-                    
-                    # Strategy 2: Usar JavaScript como fallback
-                    if not option_selected:
-                        clicked = await page.evaluate(f"""
-                            (() => {{
-                                const options = Array.from(document.querySelectorAll('[role="option"]'));
-                                const option = options.find(el => {{
-                                    const text = el.textContent || '';
-                                    return text.includes('{inventory_type}') || text.trim() === '{inventory_type}';
-                                }});
-                                if (option) {{
-                                    option.click();
-                                    return true;
-                                }}
-                                return false;
-                            }})();
-                        """)
-                        if clicked:
+
+                    for candidate in candidates:
+                        if option_selected:
+                            break
+
+                        # Strategy 1: Procurar por role option
+                        try:
+                            option = page.get_by_role("option", name=candidate)
+                            await option.wait_for(state="visible", timeout=5000)
+                            await option.click()
                             option_selected = True
-                            logger.info("_set_inventory_type | option selected via strategy 2 (javascript)")
-                    
+                            logger.info(f"_set_inventory_type | option '{candidate}' selected via strategy 1 (role)")
+                        except Exception:
+                            pass
+
+                        # Strategy 2: Usar JavaScript como fallback
+                        if not option_selected:
+                            clicked = await page.evaluate(f"""
+                                (() => {{
+                                    const options = Array.from(document.querySelectorAll('[role="option"]'));
+                                    const option = options.find(el => {{
+                                        const text = el.textContent || '';
+                                        return text.includes('{candidate}') || text.trim() === '{candidate}';
+                                    }});
+                                    if (option) {{
+                                        option.click();
+                                        return true;
+                                    }}
+                                    return false;
+                                }})();
+                            """)
+                            if clicked:
+                                option_selected = True
+                                logger.info(f"_set_inventory_type | option '{candidate}' selected via strategy 2 (javascript)")
+
                     if not option_selected:
-                        raise Exception(f"Could not find option '{inventory_type}' in dropdown")
-                    
+                        raise Exception(f"Could not find option '{inventory_type}' (tried: {candidates}) in dropdown")
+
                     await page.wait_for_timeout(1000)
                     return
-                    
+
                 except Exception as e:
                     if attempt < max_attempts - 1:
                         logger.warning(f"Attempt {attempt + 1} failed, retrying: {str(e)}")
