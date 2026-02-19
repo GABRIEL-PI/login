@@ -39,6 +39,9 @@ async def import_cookies_to_profile():
     
     print(f"✅ {len(cookies)} cookies carregados")
     
+    # Normalizar chaves para minúsculo (algumas extensões exportam "Name", "Value", etc.)
+    cookies = [{k.lower(): v for k, v in c.items()} for c in cookies]
+    
     # Converter formato de extensão para formato Playwright
     playwright_cookies = []
     for cookie in cookies:
@@ -58,8 +61,8 @@ async def import_cookies_to_profile():
             "value": cookie["value"],
             "domain": cookie["domain"],
             "path": cookie["path"],
-            "expires": cookie.get("expirationDate", -1),
-            "httpOnly": cookie.get("httpOnly", False),
+            "expires": cookie.get("expirationdate", -1),
+            "httpOnly": cookie.get("httponly", False),
             "secure": cookie.get("secure", False),
             "sameSite": same_site
         }
